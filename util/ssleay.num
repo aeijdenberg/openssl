@@ -403,3 +403,10 @@ SSL_get_server_random                   437	EXIST::FUNCTION:
 SSL_get_client_ciphers                  438	EXIST::FUNCTION:
 SSL_get_client_random                   439	EXIST::FUNCTION:
 SSL_SESSION_get_master_key              440	EXIST::FUNCTION:
+SSL_CTX_apply_certificate_transparency_policy 441	EXIST::FUNCTION:
+SSL_get_peer_scts                       442	EXIST::FUNCTION:
+SSL_CTX_set_default_ct_verify_paths     443	EXIST::FUNCTION:
+SSL_apply_certificate_transparency_policy 444	EXIST::FUNCTION:
+SSL_CTX_load_ct_verify_location         445	EXIST::FUNCTION:
+SSL_CTX_has_client_custom_ext           446	EXIST::FUNCTION:
+SSL_CTX_get_certificate_transparency_policy 447	EXIST::FUNCTION:

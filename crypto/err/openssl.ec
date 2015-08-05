@@ -36,6 +36,7 @@ L HMAC		include/openssl/hmac.h		crypto/hmac/hmac_err.c
 L CMS		include/openssl/cms.h		crypto/cms/cms_err.c
 L JPAKE		include/openssl/jpake.h		crypto/jpake/jpake_err.c
 L FIPS		include/openssl/fips.h		crypto/fips_err.h
+L CT		include/openssl/ct.h		crypto/ct/ct_err.c
 
 # additional header files to be scanned for function names
 L NONE		crypto/x509/x509_vfy.h		NONE
@@ -44,6 +45,7 @@ L NONE		crypto/asn1/asn_lcl.h		NONE
 L NONE		crypto/cms/cms_lcl.h		NONE
 L NONE		fips/rand/fips_rand.h		NONE
 L NONE		ssl/ssl_locl.h			NONE
+L NONE		crypto/ct/ct_locl.h     NONE
 
 
 F RSAREF_F_RSA_BN2BIN

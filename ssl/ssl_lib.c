@@ -152,6 +152,7 @@
 #include <openssl/x509v3.h>
 #include <openssl/rand.h>
 #include <openssl/ocsp.h>
+#include <openssl/ct.h>
 #ifndef OPENSSL_NO_DH
 # include <openssl/dh.h>
 #endif
@@ -330,6 +331,12 @@ SSL *SSL_new(SSL_CTX *ctx)
     s->tlsext_ocsp_exts = NULL;
     s->tlsext_ocsp_resp = NULL;
     s->tlsext_ocsp_resplen = -1;
+    s->tlsext_ct_policy = CT_POLICY_NONE;
+    s->tlsext_scts = NULL;
+    s->tlsext_sct_par_pkey = NULL;
+    s->tls_ext_sct_data = NULL;
+    s->tls_ext_sct_data_len = 0;
+    s->tlsext_ct_have_parsed = 0;
     CRYPTO_add(&ctx->references, 1, CRYPTO_LOCK_SSL_CTX);
     s->initial_ctx = ctx;
 # ifndef OPENSSL_NO_EC
@@ -385,6 +392,8 @@ SSL *SSL_new(SSL_CTX *ctx)
     s->psk_client_callback = ctx->psk_client_callback;
     s->psk_server_callback = ctx->psk_server_callback;
 #endif
+
+    SSL_apply_certificate_transparency_policy(s, ctx->tlsext_ct_policy);
 
     return (s);
  err:
@@ -567,6 +576,11 @@ void SSL_free(SSL *s)
 #endif                         /* OPENSSL_NO_EC */
     sk_X509_EXTENSION_pop_free(s->tlsext_ocsp_exts, X509_EXTENSION_free);
     sk_OCSP_RESPID_pop_free(s->tlsext_ocsp_ids, OCSP_RESPID_free);
+    SCT_LIST_free(s->tlsext_scts);
+    if (s->tls_ext_sct_data)
+        OPENSSL_free(s->tls_ext_sct_data);
+    if (s->tlsext_sct_par_pkey)
+        EVP_PKEY_free(s->tlsext_sct_par_pkey);
     OPENSSL_free(s->tlsext_ocsp_resp);
     OPENSSL_free(s->alpn_client_proto_list);
 
@@ -1693,6 +1707,7 @@ SSL_CTX *SSL_CTX_new(const SSL_METHOD *meth)
     ret->method = meth;
 
     ret->cert_store = NULL;
+    ret->ctlog_store = NULL;
     ret->session_cache_mode = SSL_SESS_CACHE_SERVER;
     ret->session_cache_size = SSL_SESSION_CACHE_MAX_SIZE_DEFAULT;
     ret->session_cache_head = NULL;
@@ -1734,6 +1749,9 @@ SSL_CTX *SSL_CTX_new(const SSL_METHOD *meth)
         goto err;
     ret->cert_store = X509_STORE_new();
     if (ret->cert_store == NULL)
+        goto err;
+    ret->ctlog_store = CTLOG_STORE_new();
+    if (ret->ctlog_store == NULL)
         goto err;
 
     if (!ssl_create_cipher_list(ret->method,
@@ -1863,6 +1881,7 @@ void SSL_CTX_free(SSL_CTX *a)
     CRYPTO_free_ex_data(CRYPTO_EX_INDEX_SSL_CTX, a, &a->ex_data);
     lh_SSL_SESSION_free(a->sessions);
     X509_STORE_free(a->cert_store);
+    CTLOG_STORE_free(a->ctlog_store);
     sk_SSL_CIPHER_free(a->cipher_list);
     sk_SSL_CIPHER_free(a->cipher_list_by_id);
     ssl_cert_free(a->cert);
@@ -2850,7 +2869,15 @@ SSL_CTX *SSL_set_SSL_CTX(SSL *ssl, SSL_CTX *ctx)
 #ifndef OPENSSL_NO_STDIO
 int SSL_CTX_set_default_verify_paths(SSL_CTX *ctx)
 {
-    return (X509_STORE_set_default_paths(ctx->cert_store));
+    int ret = X509_STORE_set_default_paths(ctx->cert_store);
+    if (ret == 1) { /* if that works, let's try logs too */
+        /*
+         * TODO(aeijdenberg): for now deliberately fail silently if unable
+         * to load default log files.
+         */
+        SSL_CTX_set_default_ct_verify_paths(ctx);
+    }
+    return ret;
 }
 
 int SSL_CTX_load_verify_locations(SSL_CTX *ctx, const char *CAfile,
@@ -3337,3 +3364,242 @@ void *SSL_CTX_get0_security_ex_data(const SSL_CTX *ctx)
 }
 
 IMPLEMENT_OBJ_BSEARCH_GLOBAL_CMP_FN(SSL_CIPHER, SSL_CIPHER, ssl_cipher_id);
+
+/*
+ * Look for data collected during ServerHello and parse if found.
+ * Return 1 on success, 0 on failure.
+ */
+static int CT_extract_tls_extension_scts(SSL *s)
+{
+    int rv = 0;
+    if (s && s->tls_ext_sct_data) {
+        if (CT_parse_sct_list(s->tls_ext_sct_data, s->tls_ext_sct_data_len,
+                              &s->tlsext_scts, CT_TLS_EXTENSION) != 1)
+            goto err;
+    }
+    rv = 1;
+err:
+    return rv;
+}
+
+/*
+ * Look for X509 SCT extension provided if an OCSP stapled response can be found
+ * and parse if found.
+ * Return 1 on success, 0 on failure.
+ */
+static int CT_extract_ocsp_response_scts(SSL *s)
+{
+    int rv = 0;
+    OCSP_BASICRESP *br = NULL;
+    OCSP_RESPONSE *rsp = NULL;
+    STACK_OF(SCT) *scts = NULL;
+    SCT *sct = NULL;
+    if (s && s->tlsext_ocsp_resp && (s->tlsext_ocsp_resplen > 0)) {
+        const unsigned char *p = s->tlsext_ocsp_resp;
+        rsp = d2i_OCSP_RESPONSE(NULL, &p, s->tlsext_ocsp_resplen);
+        if (rsp == NULL) {
+            goto err;
+        } else {
+            br = OCSP_response_get1_basic(rsp);
+            if (br == NULL) {
+                goto err;
+            } else {
+                int i; /* TODO(aeijdenberg): not too sure about this part... */
+                for (i = 0; i < OCSP_resp_count(br); i++) {
+                    OCSP_SINGLERESP *single = OCSP_resp_get0(br, i);
+                    if (single) {
+                        if ((scts = OCSP_SINGLERESP_get1_ext_d2i(single,
+                                NID_ct_cert_scts, NULL, NULL))) {
+                            while ((sct = sk_SCT_pop(scts))) {
+                                if (SCT_set_source(sct,
+                                        CT_OCSP_STAPLED_RESPONSE) != 1)
+                                    goto err;
+                                if (s->tlsext_scts == NULL) {
+                                    if ((s->tlsext_scts = sk_SCT_new_null()) == NULL)
+                                        goto err;
+                                }
+                                sk_SCT_push(s->tlsext_scts, sct);
+                                sct = NULL;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    rv = 1;
+err:
+    OCSP_BASICRESP_free(br);
+    OCSP_RESPONSE_free(rsp);
+    SCT_LIST_free(scts);
+    SCT_free(sct);
+
+    return rv;
+}
+
+/*
+ * Look for X509 SCT extension in certificate itself and parse if found.
+ * Return 1 on success, 0 on failure.
+ */
+static int CT_extract_x509v3_extension_scts(SSL *s)
+{
+    int rv = 0;
+    STACK_OF(SCT) *scts = NULL;
+    SCT *sct = NULL;
+    if (s && s->session && s->session->peer) {
+        X509 *x = s->session->peer;
+        if ((scts = X509_get_ext_d2i(x, NID_ct_precert_scts, NULL, NULL))) {
+            while ((sct = sk_SCT_pop(scts))) {
+                if (SCT_set_source(sct, CT_X509V3_EXTENSION) != 1)
+                    goto err;
+                if (s->tlsext_scts == NULL) {
+                    if ((s->tlsext_scts = sk_SCT_new_null()) == NULL)
+                        goto err;
+                }
+                sk_SCT_push(s->tlsext_scts, sct);
+                sct = NULL;
+            }
+        }
+    }
+    rv = 1;
+err:
+    SCT_LIST_free(scts);
+    SCT_free(sct);
+    return rv;
+}
+
+/*
+ * Attempt to find all SCTs present in request via TLS extension, X509v3
+ * extension and OCSP response.
+ * Return pointer to stack on success (do not try to free this), NULL on failure.
+ */
+const STACK_OF(SCT) *SSL_get_peer_scts(SSL *s)
+{
+    if (s == NULL) {
+        CTerr(CT_F_SSL_GET_PEER_SCTS, CT_R_NULL_INPUT);
+        goto err;
+    }
+    if (!s->tlsext_ct_have_parsed) {
+        CT_extract_tls_extension_scts(s); /* TODO(aeijdenberg): handle failure? */
+        CT_extract_ocsp_response_scts(s); /* TODO(aeijdenberg): handle failure? */
+        CT_extract_x509v3_extension_scts(s); /* TODO(aeijdenberg): handle failure? */
+        s->tlsext_ct_have_parsed = 1;
+    }
+    return s->tlsext_scts;
+err:
+    return NULL;
+}
+
+/*
+ * Call this before beginning handshake. Sets the policy for the connection, which
+ * is applied upon receipt of ServerHelloDone. If the policy causes the connection to
+ * be invalid (such as by not providing enough SCTs, or providing invalid SCTs), then the
+ * connection is terminated.
+ * NOTE: setting a policy that requests SCTs has the side-effect of requesting an OCSP stapled
+ *       response.
+ */
+int SSL_apply_certificate_transparency_policy(SSL *s, ct_policy policy)
+{
+    int rv = 0;
+    if (s == NULL) {
+        CTerr(CT_F_SSL_APPLY_CERTIFICATE_TRANSPARENCY_POLICY, CT_R_NULL_INPUT);
+        goto err;
+    }
+    /*
+     * Since code exists that uses the custom extension handler for CT, look for
+     * this and throw an error if they have already registered to use CT.
+     */
+    if (policy != CT_POLICY_NONE && SSL_CTX_has_client_custom_ext(s->ctx,
+                                    TLSEXT_TYPE_signed_certificate_timestamp)) {
+        CTerr(CT_F_SSL_APPLY_CERTIFICATE_TRANSPARENCY_POLICY,
+              CT_R_CUSTOM_EXT_HANDLER_ALREADY_INSTALLED);
+        goto err;
+    }
+    s->tlsext_ct_policy = policy;
+    if (policy != CT_POLICY_NONE)
+        /* If we are requesting or requiring CT, then we MUST accept SCTs served via OCSP */
+        SSL_set_tlsext_status_type(s, TLSEXT_STATUSTYPE_ocsp);
+    rv = 1;
+err:
+    return rv;
+}
+
+/*
+ * Call this before beginning handshake. Sets the policy for the connection, which
+ * is applied upon receipt of ServerHelloDone. If the policy causes the connection to
+ * be invalid (such as by not providing enough SCTs, or providing invalid SCTs), then the
+ * connection is terminated.
+ * NOTE: setting a policy that requests SCTs has the side-effect of requesting an OCSP stapled
+ *       response.
+ */
+int SSL_CTX_apply_certificate_transparency_policy(SSL_CTX *ctx, ct_policy policy)
+{
+    int rv = 0;
+    if (ctx == NULL) {
+        CTerr(CT_F_SSL_CTX_APPLY_CERTIFICATE_TRANSPARENCY_POLICY, CT_R_NULL_INPUT);
+        goto err;
+    }
+    /*
+     * Since code exists that uses the custom extension handler for CT, look for
+     * this and throw an error if they have already registered to use CT.
+     */
+    if (policy != CT_POLICY_NONE && SSL_CTX_has_client_custom_ext(ctx,
+                                    TLSEXT_TYPE_signed_certificate_timestamp)) {
+        CTerr(CT_F_SSL_CTX_APPLY_CERTIFICATE_TRANSPARENCY_POLICY,
+              CT_R_CUSTOM_EXT_HANDLER_ALREADY_INSTALLED);
+        goto err;
+    }
+    ctx->tlsext_ct_policy = policy;
+    rv = 1;
+err:
+    return rv;
+}
+
+ct_policy SSL_CTX_get_certificate_transparency_policy(SSL_CTX *ctx)
+{
+    if (ctx == NULL)
+        return CT_POLICY_NONE; /* any better ideas for failing? */
+    else
+        return ctx->tlsext_ct_policy;
+}
+
+int SSL_validate_ct(SSL *s)
+{
+    CT_POLICY_EVAL_CTX *ctx = NULL;
+    int rv = 0;
+
+    if (s == NULL || s->session == NULL || s->session->peer == NULL) {
+        CTerr(CT_F_SSL_VALIDATE_CT, CT_R_NULL_INPUT);
+        goto err;
+    }
+    ctx = CT_POLICY_EVAL_CTX_new();
+    if (ctx == NULL) {
+        CTerr(CT_F_SSL_VALIDATE_CT, CT_R_MALLOC_FAILED);
+        goto err;
+    }
+    if (CT_POLICY_EVAL_CTX_set_policy(ctx, s->tlsext_ct_policy) != 1) {
+        CTerr(CT_F_SSL_VALIDATE_CT, CT_R_SET_FAILED);
+        goto err;
+    }
+    if (CT_POLICY_EVAL_CTX_set0_log_store(ctx, s->ctx->ctlog_store) != 1) {
+        CTerr(CT_F_SSL_VALIDATE_CT, CT_R_SET_FAILED);
+        goto err;
+    }
+    rv = CT_evaluate_policy(ctx, SSL_get_peer_scts(s), s->session->peer,
+                            s->tlsext_sct_par_pkey);
+
+err:
+    CT_POLICY_EVAL_CTX_free(ctx);
+
+    return rv;
+}
+
+int SSL_CTX_set_default_ct_verify_paths(SSL_CTX *ctx)
+{
+    return CTLOG_STORE_set_default_ct_verify_paths(ctx->ctlog_store);
+}
+
+int SSL_CTX_load_ct_verify_location(SSL_CTX *ctx, const char *ctfile)
+{
+    return CTLOG_STORE_load_file(ctx->ctlog_store, ctfile);
+}

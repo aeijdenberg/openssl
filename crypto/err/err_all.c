@@ -106,6 +106,8 @@
 # include <openssl/jpake.h>
 #endif
 
+# include <openssl/ct.h>
+
 void ERR_load_crypto_strings(void)
 {
 #ifdef OPENSSL_FIPS
@@ -161,5 +163,6 @@ void ERR_load_crypto_strings(void)
 # ifndef OPENSSL_NO_JPAKE
     ERR_load_JPAKE_strings();
 # endif
+    ERR_load_CT_strings();
 #endif
 }
