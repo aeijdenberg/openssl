@@ -532,7 +532,7 @@ int CT_parse_sct_list_from_x509_extension(const X509_EXTENSION *ext,
         CTerr(CT_F_CT_PARSE_SCT_LIST_FROM_X509_EXTENSION, CT_R_X509V3_INVALID_EXTENSION);
         goto err;
     } else {
-        // FIXME: constify X509_EXTENSION_get_data()?
+        /* FIXME: constify X509_EXTENSION_get_data()? */
         const ASN1_OCTET_STRING *os = X509_EXTENSION_get_data((X509_EXTENSION *)ext);
         if (os->length > 0) {
             const unsigned char *p = os->data;
