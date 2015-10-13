@@ -212,6 +212,14 @@ size_t SCT_get0_extensions(const SCT *sct, unsigned char **ext);
 size_t SCT_get0_signature(const SCT *sct, unsigned char **sig);
 
 
+
+
+SCT *SCT_new_from_base64(unsigned char version, const char *logid_base64,
+                         log_entry_type_t entry_type, uint64_t timestamp,
+                         const char *extensions_base64,
+                         const char *signature_base64);
+void SCT_LIST_free(STACK_OF(SCT) *a);
+
 # endif
 
 /* BEGIN ERROR CODES */
@@ -224,14 +232,30 @@ void ERR_load_CT_strings(void);
 /* Error codes for the CT functions. */
 
 /* Function codes. */
+# define CT_F_D2I_SCT_LIST                                105
+# define CT_F_I2D_SCT_LIST                                106
+# define CT_F_I2O_SCT                                     107
+# define CT_F_I2O_SCT_LIST                                108
+# define CT_F_O2I_SCT                                     109
+# define CT_F_O2I_SCT_LIST                                110
+# define CT_F_SCT_CTX_NEW                                 111
 # define CT_F_SCT_NEW                                     100
+# define CT_F_SCT_NEW_FROM_BASE64                         112
 # define CT_F_SCT_SET0_LOG_ID                             101
 # define CT_F_SCT_SET_LOG_ENTRY_TYPE                      102
 # define CT_F_SCT_SET_SIGNATURE_NID                       103
 # define CT_F_SCT_SET_VERSION                             104
+# define CT_F_SCT_VERIFY                                  113
+# define CT_F_SCT_VERIFY_V1                               114
 
 /* Reason codes. */
 # define CT_R_INVALID_LOG_ID_LENGTH                       100
+# define CT_R_SCT_INVALID                                 104
+# define CT_R_SCT_INVALID_SIGNATURE                       105
+# define CT_R_SCT_LIST_INVALID                            106
+# define CT_R_SCT_LOG_ID_MISMATCH                         107
+# define CT_R_SCT_NOT_SET                                 108
+# define CT_R_SCT_UNSUPPORTED_VERSION                     109
 # define CT_R_UNRECOGNIZED_SIGNATURE_NID                  101
 # define CT_R_UNSUPPORTED_ENTRY_TYPE                      102
 # define CT_R_UNSUPPORTED_VERSION                         103

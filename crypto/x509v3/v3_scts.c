@@ -84,7 +84,6 @@
                          l|=((uint64_t)(*((c)++))))
 
 
-static void SCT_LIST_free(STACK_OF(SCT) *a);
 static STACK_OF(SCT) *d2i_SCT_LIST(STACK_OF(SCT) **a,
                                    const unsigned char **pp, long length);
 static int i2r_SCT_LIST(X509V3_EXT_METHOD *method, STACK_OF(SCT) *sct_list,
@@ -140,11 +139,6 @@ static void timestamp_print(BIO *out, uint64_t timestamp)
     ASN1_GENERALIZEDTIME_set_string(gen, genstr);
     ASN1_GENERALIZEDTIME_print(out, gen);
     ASN1_GENERALIZEDTIME_free(gen);
-}
-
-static void SCT_LIST_free(STACK_OF(SCT) *a)
-{
-    sk_SCT_pop_free(a, SCT_free);
 }
 
 static STACK_OF(SCT) *d2i_SCT_LIST(STACK_OF(SCT) **a,
