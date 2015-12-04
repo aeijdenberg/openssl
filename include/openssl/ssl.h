@@ -146,6 +146,7 @@
 # include <openssl/e_os2.h>
 
 # include <openssl/comp.h>
+# include "crypto/include/internal/ct_int.h"
 # include <openssl/bio.h>
 # ifdef OPENSSL_USE_DEPRECATED
 #  include <openssl/x509.h>
@@ -861,6 +862,7 @@ const char *SSL_get_psk_identity(const SSL *s);
 
 /* Register callbacks to handle custom TLS Extensions for client or server. */
 
+__owur int SSL_CTX_has_client_custom_ext(SSL_CTX *ctx, unsigned int ext_type);
 __owur int SSL_CTX_add_client_custom_ext(SSL_CTX *ctx, unsigned int ext_type,
                                   custom_ext_add_cb add_cb,
                                   custom_ext_free_cb free_cb,
@@ -1776,6 +1778,18 @@ void SSL_set_not_resumable_session_callback(SSL *ssl,
                                                        int
                                                        is_forward_secure));
 
+/* Set/get CT policy */
+int SSL_apply_certificate_transparency_policy(SSL *s, ct_policy policy);
+int SSL_CTX_apply_certificate_transparency_policy(SSL_CTX *ctx, ct_policy policy);
+ct_policy SSL_CTX_get_certificate_transparency_policy(SSL_CTX *ctx);
+
+/* Get SCT objects for connection */
+const STACK_OF(SCT) *SSL_get_peer_scts(SSL *s);
+
+/* Set default verify location for CT logs */
+int SSL_CTX_set_default_ct_verify_paths(SSL_CTX *ctx);
+int SSL_CTX_load_ct_verify_location(SSL_CTX *ctx, const char *ctfile);
+
 void SSL_set_debug(SSL *s, int debug);
 __owur int SSL_cache_hit(SSL *s);
 __owur int SSL_is_server(SSL *s);
@@ -1954,6 +1968,7 @@ void ERR_load_SSL_strings(void);
 # define SSL_F_SSL3_DIGEST_CACHED_RECORDS                 293
 # define SSL_F_SSL3_DO_CHANGE_CIPHER_SPEC                 292
 # define SSL_F_SSL3_ENC                                   134
+# define SSL_F_SSL3_FINAL_FINISH_MAC                      285
 # define SSL_F_SSL3_GENERATE_KEY_BLOCK                    238
 # define SSL_F_SSL3_GENERATE_MASTER_SECRET                388
 # define SSL_F_SSL3_GET_CERTIFICATE_REQUEST               135
@@ -1972,7 +1987,6 @@ void ERR_load_SSL_strings(void);
 # define SSL_F_SSL3_GET_SERVER_CERTIFICATE                144
 # define SSL_F_SSL3_GET_SERVER_DONE                       145
 # define SSL_F_SSL3_GET_SERVER_HELLO                      146
-# define SSL_F_SSL3_FINAL_FINISH_MAC                      285
 # define SSL_F_SSL3_NEW_SESSION_TICKET                    287
 # define SSL_F_SSL3_OUTPUT_CERT_CHAIN                     147
 # define SSL_F_SSL3_PEEK                                  235
@@ -2004,6 +2018,7 @@ void ERR_load_SSL_strings(void);
 # define SSL_F_SSL_ADD_SERVERHELLO_RENEGOTIATE_EXT        299
 # define SSL_F_SSL_ADD_SERVERHELLO_TLSEXT                 278
 # define SSL_F_SSL_ADD_SERVERHELLO_USE_SRTP_EXT           308
+# define SSL_F_SSL_APPLY_CERTIFICATE_TRANSPARENCY_POLICY  391
 # define SSL_F_SSL_BAD_METHOD                             160
 # define SSL_F_SSL_BUILD_CERT_CHAIN                       332
 # define SSL_F_SSL_BYTES_TO_CIPHER_LIST                   161
@@ -2022,6 +2037,7 @@ void ERR_load_SSL_strings(void);
 # define SSL_F_SSL_CONF_CMD                               334
 # define SSL_F_SSL_CREATE_CIPHER_LIST                     166
 # define SSL_F_SSL_CTRL                                   232
+# define SSL_F_SSL_CTX_APPLY_CERTIFICATE_TRANSPARENCY_POLICY 392
 # define SSL_F_SSL_CTX_CHECK_PRIVATE_KEY                  168
 # define SSL_F_SSL_CTX_MAKE_PROFILES                      309
 # define SSL_F_SSL_CTX_NEW                                169
@@ -2045,6 +2061,7 @@ void ERR_load_SSL_strings(void);
 # define SSL_F_SSL_CTX_USE_SERVERINFO_FILE                337
 # define SSL_F_SSL_DO_HANDSHAKE                           180
 # define SSL_F_SSL_GET_NEW_SESSION                        181
+# define SSL_F_SSL_GET_PEER_SCTS                          393
 # define SSL_F_SSL_GET_PREV_SESSION                       217
 # define SSL_F_SSL_GET_SERVER_CERT_INDEX                  322
 # define SSL_F_SSL_GET_SERVER_SEND_CERT                   182
@@ -2098,6 +2115,7 @@ void ERR_load_SSL_strings(void);
 # define SSL_F_SSL_USE_RSAPRIVATEKEY                      204
 # define SSL_F_SSL_USE_RSAPRIVATEKEY_ASN1                 205
 # define SSL_F_SSL_USE_RSAPRIVATEKEY_FILE                 206
+# define SSL_F_SSL_VALIDATE_CT                            394
 # define SSL_F_SSL_VERIFY_CERT_CHAIN                      207
 # define SSL_F_SSL_WRITE                                  208
 # define SSL_F_STATE_MACHINE                              353
@@ -2216,6 +2234,7 @@ void ERR_load_SSL_strings(void);
 # define SSL_R_CONNECTION_TYPE_NOT_SET                    144
 # define SSL_R_COOKIE_GEN_CALLBACK_FAILURE                400
 # define SSL_R_COOKIE_MISMATCH                            308
+# define SSL_R_CUSTOM_EXT_HANDLER_ALREADY_INSTALLED       126
 # define SSL_R_DATA_BETWEEN_CCS_AND_FINISHED              145
 # define SSL_R_DATA_LENGTH_TOO_LONG                       146
 # define SSL_R_DECRYPTION_FAILED                          147
@@ -2263,6 +2282,7 @@ void ERR_load_SSL_strings(void);
 # define SSL_R_LENGTH_TOO_SHORT                           160
 # define SSL_R_LIBRARY_BUG                                274
 # define SSL_R_LIBRARY_HAS_NO_CIPHERS                     161
+# define SSL_R_MALLOC_FAILED                              113
 # define SSL_R_MISSING_DH_DSA_CERT                        162
 # define SSL_R_MISSING_DH_KEY                             163
 # define SSL_R_MISSING_DH_RSA_CERT                        164
@@ -2300,6 +2320,7 @@ void ERR_load_SSL_strings(void);
 # define SSL_R_NO_SRTP_PROFILES                           359
 # define SSL_R_NO_VERIFY_CALLBACK                         194
 # define SSL_R_NO_VERIFY_COOKIE_CALLBACK                  403
+# define SSL_R_NULL_INPUT                                 117
 # define SSL_R_NULL_SSL_CTX                               195
 # define SSL_R_NULL_SSL_METHOD_PASSED                     196
 # define SSL_R_OLD_SESSION_CIPHER_NOT_RETURNED            197
@@ -2332,6 +2353,7 @@ void ERR_load_SSL_strings(void);
 # define SSL_R_SCSV_RECEIVED_WHEN_RENEGOTIATING           345
 # define SSL_R_SERVERHELLO_TLSEXT                         275
 # define SSL_R_SESSION_ID_CONTEXT_UNINITIALIZED           277
+# define SSL_R_SET_FAILED                                 125
 # define SSL_R_SIGNATURE_ALGORITHMS_ERROR                 360
 # define SSL_R_SIGNATURE_FOR_NON_SIGNING_CERTIFICATE      220
 # define SSL_R_SRP_A_CALC                                 361
@@ -2366,6 +2388,7 @@ void ERR_load_SSL_strings(void);
 # define SSL_R_TLSV1_ALERT_DECODE_ERROR                   1050
 # define SSL_R_TLSV1_ALERT_DECRYPTION_FAILED              1021
 # define SSL_R_TLSV1_ALERT_DECRYPT_ERROR                  1051
+# define SSL_R_TLSV1_ALERT_EXPORT_RESTRICTION             1060
 # define SSL_R_TLSV1_ALERT_INAPPROPRIATE_FALLBACK         1086
 # define SSL_R_TLSV1_ALERT_INSUFFICIENT_SECURITY          1071
 # define SSL_R_TLSV1_ALERT_INTERNAL_ERROR                 1080

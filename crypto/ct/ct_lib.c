@@ -205,4 +205,97 @@ size_t SCT_get0_signature(const SCT *sct, unsigned char **sig)
     return sct->sig_len;
 }
 
+int SCT_set_source(SCT *sct, sct_source_t source)
+{
+    int rv = 0;
+
+    sct->source = source;
+    switch (source) {
+    case CT_TLS_EXTENSION:
+    case CT_OCSP_STAPLED_RESPONSE:
+        rv = SCT_set_log_entry_type(sct, X509_ENTRY);
+        if (rv != 1)
+            goto err;
+        break;
+    case CT_X509V3_EXTENSION:
+        rv = SCT_set_log_entry_type(sct, PRECERT_ENTRY);
+        if (rv != 1)
+            goto err;
+        break;
+    default: /* if we aren't sure, leave the log entry type alone */
+        break;
+    }
+    rv = 1;
+err:
+    return rv;
+}
+
+int sct_check_format(const SCT *sct)
+{
+    if (sct->version == -1)
+        return 0;
+    if (sct->version != 0) {
+        /* Just need cached encoding */
+        if (sct->sct)
+            return 1;
+        return 0;
+    }
+    if (!sct->log_id || !sct->sig)
+        return 0;
+    if (SCT_get_signature_nid(sct) <= 0)
+        return 0;
+    return 1;
+}
+
+/*
+ * Check key algorithm and parameters, return copy of key if OK
+ * or NULL if invalid.
+ */
+EVP_PKEY *sct_key_dup(EVP_PKEY *pkey)
+{
+    if (EVP_PKEY_base_id(pkey) == EVP_PKEY_RSA) {
+        if (EVP_PKEY_bits(pkey) >= SCT_MIN_RSA_BITS) {
+            CRYPTO_add(&pkey->references, CRYPTO_LOCK_EVP_PKEY, 1);
+            return pkey;
+        }
+        CTerr(CT_F_SCT_KEY_DUP, CT_R_RSA_KEY_TOO_WEAK);
+        return NULL;
+    }
+    if (EVP_PKEY_base_id(pkey) == EVP_PKEY_EC) {
+        EC_KEY *eck = pkey->pkey.ec;
+        const EC_GROUP *cv = EC_KEY_get0_group(eck);
+        /* Only P-256 permitted */
+        if (!cv || EC_GROUP_get_curve_name(cv) != NID_X9_62_prime256v1) {
+            CTerr(CT_F_SCT_KEY_DUP, CT_R_ILLEGAL_CURVE);
+            return NULL;
+        }
+        /*
+         * If not uncompressed or named curve return a copy with
+         * correct parameters.
+         */
+        if (EC_KEY_get_conv_form(eck) != POINT_CONVERSION_UNCOMPRESSED
+            || EC_GROUP_get_asn1_flag(cv) != OPENSSL_EC_NAMED_CURVE) {
+            EVP_PKEY *pkdup;
+            EC_KEY *ec = EC_KEY_dup(eck);
+            if (!ec) {
+                CTerr(CT_F_SCT_KEY_DUP, ERR_R_MALLOC_FAILURE);
+                return NULL;
+            }
+            pkdup = EVP_PKEY_new();
+            if (!pkdup) {
+                CTerr(CT_F_SCT_KEY_DUP, ERR_R_MALLOC_FAILURE);
+                EC_KEY_free(ec);
+                return NULL;
+            }
+            EVP_PKEY_assign_EC_KEY(pkdup, ec);
+            EC_KEY_set_conv_form(ec, POINT_CONVERSION_UNCOMPRESSED);
+            EC_KEY_set_asn1_flag(ec, OPENSSL_EC_NAMED_CURVE);
+            return pkdup;
+        }
+        CRYPTO_add(&pkey->references, CRYPTO_LOCK_EVP_PKEY, 1);
+        return pkey;
+    }
+    CTerr(CT_F_SCT_KEY_DUP, CT_R_UNSUPPORTED_ALGORITHM);
+    return NULL;
+}
 #endif

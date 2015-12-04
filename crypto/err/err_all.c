@@ -108,6 +108,8 @@
 #include <internal/ct_int.h>
 #include <openssl/async.h>
 
+# include "crypto/include/internal/ct_int.h"
+
 void ERR_load_crypto_strings(void)
 {
 #ifdef OPENSSL_FIPS

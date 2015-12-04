@@ -2238,6 +2238,15 @@ MSG_PROCESS_RETURN tls_process_server_done(SSL *s, PACKET *pkt)
         return MSG_PROCESS_ERROR;
     }
 
+#ifndef OPENSSL_NO_CT
+    if (s->tlsext_ct_policy != CT_POLICY_NONE) {
+        if (!SSL_validate_ct(s)) {
+            ssl3_send_alert(s, SSL3_AL_FATAL, SSL_AD_HANDSHAKE_FAILURE);
+            return MSG_PROCESS_ERROR;
+        }
+    }
+#endif
+
 #ifndef OPENSSL_NO_SCTP
     /* Only applies to renegotiation */
     if (SSL_IS_DTLS(s) && BIO_dgram_is_sctp(SSL_get_wbio(s))

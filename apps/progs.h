@@ -61,6 +61,7 @@ extern int verify_main(int argc, char *argv[]);
 extern int version_main(int argc, char *argv[]);
 extern int x509_main(int argc, char *argv[]);
 extern int rehash_main(int argc, char *argv[]);
+extern int ct_main(int argc, char *argv[]);
 extern int list_main(int argc, char *argv[]);
 extern int help_main(int argc, char *argv[]);
 extern int exit_main(int argc, char *argv[]);
@@ -110,6 +111,7 @@ extern OPTIONS verify_options[];
 extern OPTIONS version_options[];
 extern OPTIONS x509_options[];
 extern OPTIONS rehash_options[];
+extern OPTIONS ct_options[];
 extern OPTIONS list_options[];
 extern OPTIONS help_options[];
 extern OPTIONS exit_options[];
@@ -197,6 +199,7 @@ static FUNCTION functions[] = {
     { FT_general, "version", version_main, version_options },
     { FT_general, "x509", x509_main, x509_options },
     { FT_general, "rehash", rehash_main, rehash_options },
+    { FT_general, "ct", ct_main, ct_options },
     { FT_general, "list", list_main, list_options },
     { FT_general, "help", help_main, help_options },
     { FT_general, "exit", exit_main, exit_options },

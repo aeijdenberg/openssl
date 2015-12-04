@@ -413,3 +413,10 @@ SSL_set_default_passwd_cb               447	EXIST::FUNCTION:
 SSL_set_default_passwd_cb_userdata      448	EXIST::FUNCTION:
 SSL_waiting_for_async                   449	EXIST::FUNCTION:
 SSL_get_async_wait_fd                   450	EXIST::FUNCTION:
+SSL_get_peer_scts                       451	EXIST::FUNCTION:
+SSL_CTX_get_certificate_transparency_policy 452	EXIST::FUNCTION:
+SSL_CTX_set_default_ct_verify_paths     453	EXIST::FUNCTION:
+SSL_CTX_apply_certificate_transparency_policy 454	EXIST::FUNCTION:
+SSL_CTX_has_client_custom_ext           455	EXIST::FUNCTION:
+SSL_CTX_load_ct_verify_location         456	EXIST::FUNCTION:
+SSL_apply_certificate_transparency_policy 457	EXIST::FUNCTION:

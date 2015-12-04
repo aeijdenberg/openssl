@@ -132,6 +132,8 @@
 #  include <signal.h>
 # endif
 
+# include "crypto/include/internal/ct_int.h"
+
 # if defined(OPENSSL_SYS_WIN32) || defined(OPENSSL_SYS_WINCE)
 #  define openssl_fdset(a,b) FD_SET((unsigned int)a, b)
 # else
@@ -447,6 +449,9 @@ X509_STORE *setup_verify(char *CAfile, char *CApath,
                          int noCAfile, int noCApath);
 int ctx_set_verify_locations(SSL_CTX *ctx, const char *CAfile,
                              const char *CApath, int noCAfile, int noCApath);
+STACK_OF(SCT) *load_scts(char *in_path, int in_form);
+int precert_strip_poison(X509 *cert);
+
 # ifdef OPENSSL_NO_ENGINE
 #  define setup_engine(engine, debug) NULL
 # else

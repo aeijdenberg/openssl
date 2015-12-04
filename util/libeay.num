@@ -4696,3 +4696,4 @@ EVP_MD_meth_dup                         5055	EXIST::FUNCTION:
 HMAC_size                               5056	EXIST::FUNCTION:
 HMAC_CTX_new                            5057	EXIST::FUNCTION:
 HMAC_CTX_free                           5058	EXIST::FUNCTION:
+i2d_re_X509_tbs_bio                     5059	EXIST::FUNCTION:
