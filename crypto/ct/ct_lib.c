@@ -205,4 +205,26 @@ size_t SCT_get0_signature(const SCT *sct, unsigned char **sig)
     return sct->sig_len;
 }
 
+int sct_check_format(const SCT *sct)
+{
+    switch (sct->version) {
+    case UNSET_VERSION:
+        return 0;
+    
+    case SCT_V1:
+        if (!sct->log_id || !sct->sig ||
+            (SCT_get_signature_nid(sct) == NID_undef))
+            return 0;
+        else
+            return 1;
+
+    default:
+        /* Just need cached encoding */
+        if (sct->sct)
+            return 1;
+        else
+            return 0;
+    }
+}
+
 #endif

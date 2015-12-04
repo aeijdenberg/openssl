@@ -70,6 +70,12 @@
 # define ERR_REASON(reason) ERR_PACK(ERR_LIB_CT,0,reason)
 
 static ERR_STRING_DATA CT_str_functs[] = {
+    {ERR_FUNC(CT_F_D2I_SCT_LIST), "d2i_SCT_LIST"},
+    {ERR_FUNC(CT_F_I2D_SCT_LIST), "i2d_SCT_LIST"},
+    {ERR_FUNC(CT_F_I2O_SCT), "i2o_SCT"},
+    {ERR_FUNC(CT_F_I2O_SCT_LIST), "i2o_SCT_LIST"},
+    {ERR_FUNC(CT_F_O2I_SCT), "o2i_SCT"},
+    {ERR_FUNC(CT_F_O2I_SCT_LIST), "o2i_SCT_LIST"},
     {ERR_FUNC(CT_F_SCT_NEW), "SCT_new"},
     {ERR_FUNC(CT_F_SCT_SET0_LOG_ID), "SCT_set0_log_id"},
     {ERR_FUNC(CT_F_SCT_SET_LOG_ENTRY_TYPE), "SCT_set_log_entry_type"},
@@ -80,6 +86,9 @@ static ERR_STRING_DATA CT_str_functs[] = {
 
 static ERR_STRING_DATA CT_str_reasons[] = {
     {ERR_REASON(CT_R_INVALID_LOG_ID_LENGTH), "invalid log id length"},
+    {ERR_REASON(CT_R_SCT_INVALID), "sct invalid"},
+    {ERR_REASON(CT_R_SCT_LIST_INVALID), "sct list invalid"},
+    {ERR_REASON(CT_R_SCT_NOT_SET), "sct not set"},
     {ERR_REASON(CT_R_UNRECOGNIZED_SIGNATURE_NID),
      "unrecognized signature nid"},
     {ERR_REASON(CT_R_UNSUPPORTED_ENTRY_TYPE), "unsupported entry type"},

@@ -61,6 +61,8 @@ extern "C" {
 
 # ifndef OPENSSL_NO_CT
 
+# include <openssl/x509v3.h>
+
 /* All hashes are currently SHA256 */
 #  define SCT_V1_HASHLEN  32
 /* Minimum RSA key size, from RFC6962 */
@@ -115,6 +117,8 @@ typedef struct {
 } SCT;
 
 DECLARE_STACK_OF(SCT)
+
+extern const X509V3_EXT_METHOD v3_ct_scts[];
 
 /*
  * Allocate new SCT.
@@ -213,6 +217,58 @@ size_t SCT_get0_extensions(const SCT *sct, unsigned char **ext);
  */
 size_t SCT_get0_signature(const SCT *sct, unsigned char **sig);
 
+/*
+ * Pretty-print debug information about a SCT, indented as specified.
+ */
+void SCT_print(SCT *sct, BIO *out, int indent);
+
+/*
+ * Does this SCT have enough info to be serialized?
+ * Returns 1 if so, 0 otherwise.
+ */
+int sct_check_format(const SCT *sct);
+
+/*
+ * Free a stack of SCTs, and the underlying SCTs themselves.
+ */
+void SCT_LIST_free(STACK_OF(SCT) *a);
+
+
+/*
+ * Serialize (to TLS format) a stack of SCTs and return the length.
+ * "a" must not be NULL.
+ * If "pp" is NULL, just return the length of what would have been serialized.
+ * If "pp" is not NULL and "*pp" is null, function will allocate a new pointer
+ * for data that caller is responsible for freeing (only if function returns
+ * successfully).
+ * If "pp" is NULL and "*pp" is not NULL, caller is responsible for ensuring
+ * that "*pp" is large enough to accept all of the serializied data.
+ * Returns < 0 on error, >= 0 indicating bytes written (or would have been)
+ * on success.
+ */
+int i2o_SCT_LIST(STACK_OF(SCT) *a, unsigned char **pp);
+
+
+
+
+/* TODO DOCUMENT */
+SCT *o2i_SCT(SCT **psct, const unsigned char **in, size_t len);
+
+/* TODO DOCUMENT */
+int i2o_SCT(const SCT *sct, unsigned char **out);
+
+/*
+ * Convert TLS format SCT list to a stack of SCTs.
+ * If "a" or "*a" is NULL, a new stack will be created that the caller is 
+ * responsible for freeing (by calling SCT_LIST_free).
+ * "**pp" and "*pp" must not be NULL.
+ * Upon success, "*pp" will point to after the last bytes read, and a stack
+ * will be returned.
+ * Upon failure, a NULL pointer will be returned, and the position of "*p" is
+ * not defined.
+ */ 
+STACK_OF(SCT) *o2i_SCT_LIST(STACK_OF(SCT) **a, const unsigned char **pp,
+                            size_t len);
 
 # endif
 
@@ -226,6 +282,12 @@ void ERR_load_CT_strings(void);
 /* Error codes for the CT functions. */
 
 /* Function codes. */
+# define CT_F_D2I_SCT_LIST                                105
+# define CT_F_I2D_SCT_LIST                                106
+# define CT_F_I2O_SCT                                     107
+# define CT_F_I2O_SCT_LIST                                108
+# define CT_F_O2I_SCT                                     109
+# define CT_F_O2I_SCT_LIST                                110
 # define CT_F_SCT_NEW                                     100
 # define CT_F_SCT_SET0_LOG_ID                             101
 # define CT_F_SCT_SET_LOG_ENTRY_TYPE                      102
@@ -234,6 +296,9 @@ void ERR_load_CT_strings(void);
 
 /* Reason codes. */
 # define CT_R_INVALID_LOG_ID_LENGTH                       100
+# define CT_R_SCT_INVALID                                 104
+# define CT_R_SCT_LIST_INVALID                            105
+# define CT_R_SCT_NOT_SET                                 106
 # define CT_R_UNRECOGNIZED_SIGNATURE_NID                  101
 # define CT_R_UNSUPPORTED_ENTRY_TYPE                      102
 # define CT_R_UNSUPPORTED_VERSION                         103
